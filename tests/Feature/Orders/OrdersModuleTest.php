@@ -5,6 +5,8 @@ namespace Tests\Feature\Orders;
 use App\Contracts\OrderServiceInterface;
 use App\Events\OrderCancelled;
 use App\Events\OrderPlaced;
+use App\Events\OrderShipped;
+use App\Events\PaymentConfirmed;
 use App\Models\User;
 use App\Modules\Catalog\Models\Product;
 use App\Modules\Orders\Models\Order;
@@ -438,5 +440,35 @@ class OrdersModuleTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('date to field must be a date after or equal to date from');
+    }
+
+    public function test_listeners_and_has_purchased_handle_order_lifecycle(): void
+    {
+        $customer = User::where('email', 'customer@shop.test')->firstOrFail();
+        $product = Product::firstOrFail();
+
+        $this->actingAs($customer)->post(route('cart.add', $product), ['quantity' => 1]);
+        $this->actingAs($customer)->post(route('checkout.store'), ['payment_method' => 'cod']);
+
+        $order = Order::where('user_id', $customer->id)->firstOrFail();
+        $service = app(OrderServiceInterface::class);
+
+        $this->assertFalse($service->hasPurchased($customer->id, $product->id));
+
+        $payment = Payment::where('order_id', $order->id)->firstOrFail();
+        $payment->update(['status' => Payment::PAID, 'paid_at' => now()]);
+        PaymentConfirmed::dispatch($payment);
+
+        $this->assertSame(Order::PAID, $order->fresh()->status);
+        $this->assertTrue($service->hasPurchased($customer->id, $product->id));
+
+        $shipment = Shipment::updateOrCreate(
+            ['order_id' => $order->id],
+            ['courier' => 'J&T Express', 'tracking_number' => 'JT-123456', 'status' => 'shipped']
+        );
+        OrderShipped::dispatch($shipment);
+
+        $this->assertSame(Order::SHIPPED, $order->fresh()->status);
+        $this->assertTrue($service->hasPurchased($customer->id, $product->id));
     }
 }
