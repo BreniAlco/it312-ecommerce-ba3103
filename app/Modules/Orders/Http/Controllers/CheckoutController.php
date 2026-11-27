@@ -3,12 +3,14 @@
 namespace App\Modules\Orders\Http\Controllers;
 
 use App\Contracts\CartServiceInterface;
+use App\Contracts\CatalogServiceInterface;
 use App\Contracts\OrderServiceInterface;
 use App\Contracts\PaymentServiceInterface;
 use App\Contracts\ShippingServiceInterface;
 use App\Contracts\UserServiceInterface;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use RuntimeException;
 
 class CheckoutController extends Controller
 {
@@ -32,16 +34,39 @@ class CheckoutController extends Controller
         return view('orders::checkout', compact('items', 'address', 'subtotal', 'shippingFee'));
     }
 
-    public function store(Request $request, OrderServiceInterface $orders, PaymentServiceInterface $payments)
-    {
+    public function store(
+        Request $request,
+        CartServiceInterface $cart,
+        CatalogServiceInterface $catalog,
+        OrderServiceInterface $orders,
+        PaymentServiceInterface $payments,
+    ) {
         $data = $request->validate([
             'payment_method' => ['required', 'in:cod,online'],
             'voucher_code' => ['nullable', 'string', 'max:50'],
         ]);
 
-        // TODO (Orders team): re-check stock for every item before creating the order (CatalogServiceInterface::isAvailable)
+        $userId = $request->user()->id;
+        $items = $cart->getItems($userId);
 
-        $order = $orders->createFromCart($request->user()->id, $data);
+        if ($items->isEmpty()) {
+            return redirect()->route('cart.index')->with('error', 'Your cart is empty.');
+        }
+
+        foreach ($items as $item) {
+            if (! $catalog->isAvailable($item->product_id, $item->quantity)) {
+                $name = $item->product?->name ?? 'One of the items in your cart';
+
+                return redirect()->route('cart.index')->with('error', "{$name} does not have enough stock available.");
+            }
+        }
+
+        try {
+            $order = $orders->createFromCart($userId, $data);
+        } catch (RuntimeException $e) {
+            return redirect()->route('cart.index')->with('error', $e->getMessage());
+        }
+
         $payment = $payments->createPayment($order, $data['payment_method']);
 
         if ($payment->checkout_url) {

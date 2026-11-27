@@ -15,8 +15,9 @@
         <tbody>
             @foreach ($orders as $order)
                 <tr class="border-b">
-                    {{-- TODO (Orders team): link to orders.show --}}
-                    <td class="p-3 font-medium">{{ $order->number() }}</td>
+                    <td class="p-3 font-medium">
+                        <a href="{{ route('orders.show', $order) }}" class="text-blue-600 hover:underline">{{ $order->number() }}</a>
+                    </td>
                     <td class="p-3">{{ $order->created_at->format('M d, Y') }}</td>
                     <td class="p-3 capitalize">{{ $order->status }}</td>
                     <td class="p-3 uppercase">{{ $order->payment_method }}</td>

@@ -3,10 +3,12 @@
 namespace App\Modules\Orders\Services;
 
 use App\Contracts\CartServiceInterface;
+use App\Contracts\CatalogServiceInterface;
 use App\Contracts\OrderServiceInterface;
 use App\Contracts\ShippingServiceInterface;
 use App\Contracts\UserServiceInterface;
 use App\Contracts\VoucherServiceInterface;
+use App\Events\OrderCancelled;
 use App\Events\OrderPlaced;
 use App\Modules\Orders\Models\Order;
 use App\Modules\Users\Models\Address;
@@ -18,6 +20,7 @@ class OrderService implements OrderServiceInterface
 {
     public function __construct(
         private CartServiceInterface $cart,
+        private CatalogServiceInterface $catalog,
         private UserServiceInterface $users,
         private VoucherServiceInterface $vouchers,
         private ShippingServiceInterface $shipping,
@@ -29,6 +32,14 @@ class OrderService implements OrderServiceInterface
 
         if ($items->isEmpty()) {
             throw new RuntimeException('The cart is empty.');
+        }
+
+        foreach ($items as $item) {
+            if (! $this->catalog->isAvailable($item->product_id, $item->quantity)) {
+                $name = $item->product?->name ?? 'One of the items in your cart';
+
+                throw new RuntimeException("{$name} does not have enough stock available.");
+            }
         }
 
         // TODO (Orders team): use $checkout['address_id'] when the customer picks an address (after Users team builds the address book)
@@ -88,10 +99,15 @@ class OrderService implements OrderServiceInterface
 
         $order = Order::findOrFail($orderId);
 
-        // TODO (Orders team, Must 2): throw InvalidArgumentException when ! $order->canTransitionTo($status)
-        // TODO (Orders team, Must 2): after saving, fire OrderCancelled::dispatch($order) when $status is cancelled
+        if (! $order->canTransitionTo($status)) {
+            throw new InvalidArgumentException("Cannot transition order from {$order->status} to {$status}.");
+        }
 
         $order->update(['status' => $status]);
+
+        if ($status === Order::CANCELLED) {
+            OrderCancelled::dispatch($order);
+        }
 
         return $order;
     }

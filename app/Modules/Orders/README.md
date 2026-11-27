@@ -25,10 +25,10 @@ Checkout, order creation from the cart, customer order history and detail, cance
 > - [x] Listeners `MarkOrderPaid` and `MarkOrderShipped`
 
 **Your work: Must items (graded)**
-- [ ] 1. Order detail page (`/orders/{order}`): items, totals, address, payment status, tracking from `ShippingServiceInterface`; owner only
-- [ ] 2. Cancel a pending order (`POST /orders/{order}/cancel`); `updateStatus()` enforces `canTransitionTo()` and fires `OrderCancelled`
-- [ ] 3. Admin order list with a status dropdown that calls `updateStatus()` (`/admin/orders`)
-- [ ] 4. Re-check stock for every item before placing the order + feature tests (totals, empty cart, cancel, invalid transition)
+- [x] 1. Order detail page (`/orders/{order}`): items, totals, address, payment status, tracking from `ShippingServiceInterface`; owner only
+- [x] 2. Cancel a pending order (`POST /orders/{order}/cancel`); `updateStatus()` enforces `canTransitionTo()` and fires `OrderCancelled`
+- [x] 3. Admin order list with a status dropdown that calls `updateStatus()` (`/admin/orders`)
+- [x] 4. Re-check stock for every item before placing the order + feature tests (totals, empty cart, cancel, invalid transition)
 
 **Your work: Stretch items (bonus, after all Musts)**
 - [ ] Address picker at checkout (after Users team's address book)
@@ -37,23 +37,24 @@ Checkout, order creation from the cart, customer order history and detail, cance
 ## Interface provided — `App\Contracts\OrderServiceInterface`
 | Method | Parameters | Returns | Status |
 | --- | --- | --- | --- |
-| `createFromCart` | `int $userId, array $checkout` (address_id, voucher_code, payment_method) | `Order` | Done |
+| `createFromCart` | `int $userId, array $checkout` (address_id, voucher_code, payment_method) | `Order` | Done (includes stock re-check) |
 | `find` | `int $orderId` | `?Order` with items | Done |
-| `updateStatus` | `int $orderId, string $status` | `Order` | Partial (Must 2: enforce transitions, fire `OrderCancelled`) |
+| `updateStatus` | `int $orderId, string $status` | `Order` | Done (enforces transitions, fires `OrderCancelled`) |
 | `hasPurchased` | `int $userId, int $productId` | `bool` | Done |
 
 ## Events
-- Fires: `OrderPlaced` (done), `OrderCancelled` (Must 2)
+- Fires: `OrderPlaced` (done), `OrderCancelled` (done)
 - Listens to: `PaymentConfirmed` → `MarkOrderPaid` (done), `OrderShipped` → `MarkOrderShipped` (done)
 
 ## Dependencies used
 | Module | Interface / method | Why |
 | --- | --- | --- |
 | Users team | `UserServiceInterface::getDefaultAddress` | Shipping address |
+| Catalog team | `CatalogServiceInterface::isAvailable` | Stock re-check before order creation |
 | Cart team | `CartServiceInterface::getItems`, `getSubtotal`, `clear` | Build the order |
 | Vouchers (unassigned) | `VoucherServiceInterface::apply` | Discount |
 | Payments team | `PaymentServiceInterface::createPayment` | Payment record / online checkout |
-| Shipping team | `ShippingServiceInterface::getShippingFee` | Shipping fee |
+| Shipping team | `ShippingServiceInterface::getShippingFee`, `getTracking` | Shipping fee and order tracking |
 
 ## Database
 | Table | Columns | Migration file |
@@ -67,10 +68,15 @@ Checkout, order creation from the cart, customer order history and detail, cance
 | GET | `/checkout` | `CheckoutController@show` | auth |
 | POST | `/checkout` | `CheckoutController@store` | auth |
 | GET | `/orders` | `OrderController@index` | auth |
+| GET | `/orders/{order}` | `OrderController@show` | auth |
+| POST | `/orders/{order}/cancel` | `OrderController@cancel` | auth |
+| GET | `/admin/orders` | `AdminOrderController@index` | auth, admin |
+| GET | `/admin/orders/{order}` | `AdminOrderController@show` | auth, admin |
+| PATCH | `/admin/orders/{order}/status` | `AdminOrderController@updateStatus` | auth, admin |
 
 ## Setup and testing
-- Manual test: add items to the cart, check out with COD, see the order in `/orders` and the stock go down on the product page
-- Automated tests:
+- Manual test: add items to the cart, check out with COD, see the order in `/orders` and `/orders/{order}`, cancel a pending order, and manage statuses in `/admin/orders`
+- Automated tests: `php artisan test tests/Feature/Orders/OrdersModuleTest.php`
 
 ## Changelog
 | Date | Change | PR # | Author |
