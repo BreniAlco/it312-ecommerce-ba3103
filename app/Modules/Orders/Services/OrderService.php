@@ -28,40 +28,55 @@ class OrderService implements OrderServiceInterface
 
     public function createFromCart(int $userId, array $checkout = []): Order
     {
-        $items = $this->cart->getItems($userId);
-
-        if ($items->isEmpty()) {
-            throw new RuntimeException('The cart is empty.');
+        $paymentMethod = $checkout['payment_method'] ?? 'cod';
+        if (! in_array($paymentMethod, Order::PAYMENT_METHODS, true)) {
+            throw new InvalidArgumentException("Unsupported payment method: {$paymentMethod}");
         }
 
-        foreach ($items as $item) {
-            if (! $this->catalog->isAvailable($item->product_id, $item->quantity)) {
-                $name = $item->product?->name ?? 'One of the items in your cart';
-
-                throw new RuntimeException("{$name} does not have enough stock available.");
+        $addressId = $checkout['address_id'] ?? null;
+        if ($addressId !== null && $addressId !== '') {
+            $address = Address::where('user_id', $userId)->find($addressId);
+            if (! $address) {
+                throw new InvalidArgumentException('Selected shipping address was not found.');
             }
+        } else {
+            $address = $this->users->getDefaultAddress($userId);
         }
 
-        // TODO (Orders team): use $checkout['address_id'] when the customer picks an address (after Users team builds the address book)
-        $address = isset($checkout['address_id'])
-            ? Address::where('user_id', $userId)->find($checkout['address_id'])
-            : $this->users->getDefaultAddress($userId);
+        $rawVoucher = $checkout['voucher_code'] ?? null;
+        $voucherCode = filled($rawVoucher) ? strtoupper(trim((string) $rawVoucher)) : null;
 
-        $voucherCode = $checkout['voucher_code'] ?? null;
-        $subtotal = $this->cart->getSubtotal($userId);
-        $discount = $this->vouchers->apply($voucherCode, $subtotal);
-        $shippingFee = $this->shipping->getShippingFee($address);
+        $order = DB::transaction(function () use ($userId, $address, $voucherCode, $paymentMethod) {
+            $items = $this->cart->getItems($userId);
 
-        $order = DB::transaction(function () use ($userId, $items, $address, $voucherCode, $subtotal, $discount, $shippingFee, $checkout) {
+            if ($items->isEmpty()) {
+                throw new RuntimeException('The cart is empty.');
+            }
+
+            foreach ($items as $item) {
+                if (! $item->product || ! $this->catalog->isAvailable($item->product_id, $item->quantity)) {
+                    $name = $item->product?->name ?? 'One of the items in your cart';
+
+                    throw new RuntimeException("{$name} does not have enough stock available.");
+                }
+            }
+
+            $subtotal = round($this->cart->getSubtotal($userId), 2);
+            $discount = $voucherCode
+                ? round(min(max(0.0, $this->vouchers->apply($voucherCode, $subtotal)), $subtotal), 2)
+                : 0.0;
+            $shippingFee = round(max(0.0, $this->shipping->getShippingFee($address)), 2);
+            $total = round(max(0.0, $subtotal - $discount) + $shippingFee, 2);
+
             $order = Order::create([
                 'user_id' => $userId,
                 'status' => Order::PENDING,
                 'subtotal' => $subtotal,
                 'discount' => $discount,
                 'shipping_fee' => $shippingFee,
-                'total' => $subtotal - $discount + $shippingFee,
+                'total' => $total,
                 'voucher_code' => $discount > 0 ? $voucherCode : null,
-                'payment_method' => $checkout['payment_method'] ?? 'cod',
+                'payment_method' => $paymentMethod,
                 'address_id' => $address?->id,
                 'shipping_address' => $address?->fullAddress(),
             ]);
@@ -97,13 +112,17 @@ class OrderService implements OrderServiceInterface
             throw new InvalidArgumentException("Unknown order status: {$status}");
         }
 
-        $order = Order::findOrFail($orderId);
+        $order = DB::transaction(function () use ($orderId, $status) {
+            $order = Order::lockForUpdate()->findOrFail($orderId);
 
-        if (! $order->canTransitionTo($status)) {
-            throw new InvalidArgumentException("Cannot transition order from {$order->status} to {$status}.");
-        }
+            if (! $order->canTransitionTo($status)) {
+                throw new InvalidArgumentException("Cannot transition order from {$order->status} to {$status}.");
+            }
 
-        $order->update(['status' => $status]);
+            $order->update(['status' => $status]);
+
+            return $order;
+        });
 
         if ($status === Order::CANCELLED) {
             OrderCancelled::dispatch($order);

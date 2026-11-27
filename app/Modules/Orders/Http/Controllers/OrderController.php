@@ -13,16 +13,33 @@ class OrderController extends Controller
 {
     public function index(Request $request)
     {
-        $orders = Order::where('user_id', $request->user()->id)->latest()->paginate(10);
+        $userId = $request->user()->id;
+        $requestedStatus = $request->query('status');
+        $activeStatus = in_array($requestedStatus, Order::STATUSES, true) ? $requestedStatus : null;
 
-        return view('orders::index', compact('orders'));
+        $statusCounts = Order::where('user_id', $userId)
+            ->selectRaw('status, count(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $totalOrdersCount = (int) $statusCounts->sum();
+
+        $orders = Order::where('user_id', $userId)
+            ->withCount('items')
+            ->with('payment')
+            ->when($activeStatus, fn ($query) => $query->where('status', $activeStatus))
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
+
+        return view('orders::index', compact('orders', 'statusCounts', 'totalOrdersCount', 'activeStatus'));
     }
 
     public function show(Request $request, Order $order, ShippingServiceInterface $shipping)
     {
         abort_if($order->user_id !== $request->user()->id, 403);
 
-        $order->loadMissing('items');
+        $order->loadMissing('items.product');
         $payment = $order->payment()->latest()->first();
         $shipment = $shipping->getTracking($order->id);
 

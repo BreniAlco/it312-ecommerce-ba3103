@@ -31,8 +31,8 @@ Checkout, order creation from the cart, customer order history and detail, cance
 - [x] 4. Re-check stock for every item before placing the order + feature tests (totals, empty cart, cancel, invalid transition)
 
 **Your work: Stretch items (bonus, after all Musts)**
-- [ ] Address picker at checkout (after Users team's address book)
-- [ ] Admin order filters by status and date, admin order detail page
+- [x] Address picker at checkout (after Users team's address book)
+- [x] Admin order filters by status and date, admin order detail page
 
 ## Interface provided — `App\Contracts\OrderServiceInterface`
 | Method | Parameters | Returns | Status |
@@ -83,3 +83,4 @@ Checkout, order creation from the cart, customer order history and detail, cance
 | --- | --- | --- | --- |
 | | Starter code from instructor | — | Instructor |
 | 2026-11-27 | Implement Must 1–4: customer order detail (`/orders/{order}`) with items, totals, address, payment status, and `ShippingServiceInterface` tracking; customer pending order cancellation (`POST /orders/{order}/cancel`) + `OrderService::updateStatus()` transition enforcement and `OrderCancelled` event; admin order list/detail and status updates (`/admin/orders`); checkout stock re-check (`CatalogServiceInterface::isAvailable()`) and `OrdersModuleTest` feature tests | — | Group 4 |
+| 2026-11-27 | Review & polish Checkout & Orders: add checkout address picker with ownership validation, voucher code normalization/preview/validation, transactional status locking, status badges & order progress timeline, customer order status filter & empty states, admin order search/status/date filters, responsive UI refresh, and expanded `OrdersModuleTest` coverage | — | Group 4 |
