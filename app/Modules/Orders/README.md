@@ -82,3 +82,4 @@ Checkout, order creation from the cart, customer order history and detail, cance
 | Date | Change | PR # | Author |
 | --- | --- | --- | --- |
 | | Starter code from instructor | — | Instructor |
+| 2026-11-27 | Implement Must 1–4: customer order detail (`/orders/{order}`) with items, totals, address, payment status, and `ShippingServiceInterface` tracking; customer pending order cancellation (`POST /orders/{order}/cancel`) + `OrderService::updateStatus()` transition enforcement and `OrderCancelled` event; admin order list/detail and status updates (`/admin/orders`); checkout stock re-check (`CatalogServiceInterface::isAvailable()`) and `OrdersModuleTest` feature tests | — | Group 4 |
