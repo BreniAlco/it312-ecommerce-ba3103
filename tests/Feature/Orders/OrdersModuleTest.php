@@ -84,11 +84,18 @@ class OrdersModuleTest extends TestCase
         $this->actingAs($customer)
             ->post(route('checkout.store'), ['payment_method' => 'cod'])
             ->assertRedirect(route('cart.index'))
-            ->assertSessionHas('error');
+            ->assertSessionHas('error', fn (string $message) => str_contains($message, $product->name));
 
         $this->assertDatabaseCount('orders', 0);
         $this->assertDatabaseCount('cart_items', 1);
         Event::assertNotDispatched(OrderPlaced::class);
+
+        // Zero stock is also blocked
+        $product->update(['stock' => 0]);
+        $this->actingAs($customer)
+            ->post(route('checkout.store'), ['payment_method' => 'cod'])
+            ->assertRedirect(route('cart.index'))
+            ->assertSessionHas('error', fn (string $message) => str_contains($message, $product->name));
 
         $this->expectException(RuntimeException::class);
         app(OrderServiceInterface::class)->createFromCart($customer->id, ['payment_method' => 'cod']);
@@ -317,6 +324,19 @@ class OrdersModuleTest extends TestCase
             'is_default' => true,
         ]);
 
+        $secondaryAddress = Address::create([
+            'user_id' => $customer->id,
+            'recipient' => 'Juan Office',
+            'phone' => '09179998888',
+            'street' => '10 Ayala Blvd',
+            'barangay' => 'Brgy. 3',
+            'city' => 'Lipa',
+            'province' => 'Batangas',
+            'region' => 'Region IV-A',
+            'postal_code' => '4217',
+            'is_default' => false,
+        ]);
+
         $otherAddress = Address::create([
             'user_id' => $otherUser->id,
             'recipient' => 'Other User',
@@ -351,13 +371,13 @@ class OrdersModuleTest extends TestCase
         $this->actingAs($customer)
             ->post(route('checkout.store'), [
                 'payment_method' => 'cod',
-                'address_id' => $customerAddress->id,
+                'address_id' => $secondaryAddress->id,
             ])
             ->assertRedirect(route('orders.index'));
 
         $order = Order::where('user_id', $customer->id)->firstOrFail();
-        $this->assertSame($customerAddress->id, $order->address_id);
-        $this->assertSame('45 Mabini St, Brgy. 1, Nasugbu, Batangas, 4231', $order->shipping_address);
+        $this->assertSame($secondaryAddress->id, $order->address_id);
+        $this->assertSame('10 Ayala Blvd, Brgy. 3, Lipa, Batangas, 4217', $order->shipping_address);
     }
 
     public function test_customer_orders_list_filters_by_status_and_shows_empty_states(): void
